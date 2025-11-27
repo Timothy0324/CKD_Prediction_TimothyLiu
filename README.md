@@ -4,10 +4,23 @@
 
 ---
 
-## Dataset Source
+## Dataset Source & Files
 
 Chronic Kidney Disease (CKD) Dataset — UCI Machine Learning Repository  
 🔗 https://archive.ics.uci.edu/ml/datasets/Chronic_Kidney_Disease
+
+### Regression Models
+- [Regression Report (PDF)](https://github.com/Timothy0324/CKD_Prediction_TimothyLiu/blob/main/CKD_Regression/CKD_Regression.pdf)
+- [Regression Code (QMD)](https://github.com/Timothy0324/CKD_Prediction_TimothyLiu/blob/main/CKD_Regression/CKD_Regression.qmd)
+
+### Classification & Regression Trees
+- [CART Report (PDF)](https://github.com/Timothy0324/CKD_Prediction_TimothyLiu/blob/main/CKD_Trees/CKD_Trees.pdf)
+- [CART Code (QMD)](https://github.com/Timothy0324/CKD_Prediction_TimothyLiu/blob/main/CKD_Trees/CKD_Trees.qmd)
+
+### Random Forest & Neural Networks
+- [RF + ANN Report (PDF)](https://github.com/Timothy0324/CKD_Prediction_TimothyLiu/blob/main/CKD_Predicting/CKD_Predicting.pdf)
+- [RF + ANN Code (QMD)](https://github.com/Timothy0324/CKD_Prediction_TimothyLiu/blob/main/CKD_Predicting/CKD_Predicting.qmd)
+
 
 ---
 
