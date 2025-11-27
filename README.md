@@ -100,4 +100,21 @@ perfect for medical decision-making.
 - Evaluation: accuracy, sensitivity, specificity, AUC  
 - R, tidyverse, neuralnet, rpart, randomForest  
 - Quarto / R Markdown reporting  
-- Healthcare data interpretation  
+- Healthcare data interpretation
+
+  CKD-Prediction-Models/
+│
+├── regression/
+│   ├── Timothy_Regressions.qmd
+│   └── Timothy_Regressions.pdf
+│
+├── trees/
+│   ├── Timothy_Liu_Trees.qmd
+│   └── Timothy_Liu_Trees.pdf
+│
+├── randomforest-ann/
+│   ├── Group3_Predicting.qmd
+│   └── Group3_Predicting.pdf
+│
+└── README.md
+
