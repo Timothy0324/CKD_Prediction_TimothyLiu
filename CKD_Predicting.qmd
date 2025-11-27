@@ -1,0 +1,434 @@
+---
+title: "Assignment 05 – Predicting (CKD)"
+author: "Timothy Liu,Azure Hsiao, Rolando Olmos Madrid "
+format: pdf
+editor: visual
+---
+
+**Dataset & link.** This report analyzes the **UCI Chronic Kidney Disease** dataset (≈400 patients, 24 variables) containing demographics, labs, and conditions relevant to CKD. Source: <https://archive.ics.uci.edu/dataset/336/chronic+kidney+disease>
+
+# Executive Summary
+
+### Group 3: Timothy Liu, Azure Hsiao, Rolando Olmos Madrid
+
+This analysis compares the performance of two predictive modeling approaches between Random Forest and Artificial Neural Networks (ANN) to classify patients as having chronic kidney disease (CKD) or not, using key clinical indicators (age, blood pressure, serum creatinine, and hemoglobin).
+
+The results consistently show that **serum creatinine and hemoglobin are the strongest predictors** of CKD status, which aligns closely with clinical understanding of kidney function and its role in regulating anemia and waste filtration. This means the data has a clear and strong signal, making the classification problem relatively straightforward for multiple modeling approaches.
+
+The Random Forest model was tuned using Out-of-Bag (OOB) error to identify the optimal number of predictors per split (mtry = 2). Although Random Forest typically improves predictive performance by reducing variance, its performance here was nearly identical to the single decision tree. This suggests that the data is **highly separable**, so adding model complexity does not meaningfully improve accuracy.
+
+The ANN models were then evaluated to test whether a more flexible, non-linear approach could capture additional predictive patterns. The ANN **without a hidden layer** achieved the **highest overall performance**, with an accuracy of **92.4%** and a Kappa of **0.84**. This demonstrates that a linear decision boundary is sufficient to classify CKD in this dataset. Adding a hidden layer did not improve results and slightly reduced model sensitivity, indicating that additional model complexity is unnecessary and may introduce mild overfitting.
+
+Overall, the **ANN with no hidden layer performs best**, while the Decision Tree and Random Forest achieve strong but slightly lower performance. However, the Random Forest models remain more **interpretable**, which may be preferable in clinical settings where transparency is important.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(forcats)
+library(tidyverse)
+library(rpart)
+library(rpart.plot)
+library(caret)
+```
+
+```{r}
+ckd_raw <- read.csv("chronic_kidney_disease.csv",
+                    na.strings = c("?", "", "NA"))
+
+glimpse(ckd_raw)
+summary(ckd_raw)
+
+```
+
+```{r}
+# define column names (26 expected + 1 "extra")
+col_names <- c("id","age","bp","sg","al","su","rbc","pc","pcc","ba","bgr","bu",
+               "sc","sod","pot","hemo","pcv","wbcc","rbcc","htn","dm","cad",
+               "appet","pe","ane","class","extra")
+
+ckd_raw <- read.csv("chronic_kidney_disease.csv",
+                    header = TRUE, na.strings = c("?", "", "NA"),
+                    col.names = col_names, fill = TRUE)
+
+# drop the "extra" column
+ckd_raw <- ckd_raw %>% select(-extra)
+
+glimpse(ckd_raw)
+```
+
+```{r}
+# numeric variables
+num_cols <- c("age","bp","sg","al","su","bgr","bu","sc",
+              "sod","pot","hemo","pcv","wbcc","rbcc")
+
+ckd1 <- ckd_raw %>%
+  mutate(across(all_of(num_cols), ~as.numeric(.))) %>%
+  mutate(
+    rbc   = factor(rbc, levels = c("normal","abnormal")),
+    pc    = factor(pc, levels = c("normal","abnormal")),
+    pcc   = factor(pcc, levels = c("notpresent","present")),
+    ba    = factor(ba,  levels = c("notpresent","present")),
+    htn   = factor(htn, levels = c("no","yes")),
+    dm    = factor(dm,  levels = c("no","yes")),
+    cad   = factor(cad, levels = c("no","yes")),
+    appet = factor(appet, levels = c("poor","good")),
+    pe    = factor(pe,   levels = c("no","yes")),
+    ane   = factor(ane,  levels = c("no","yes")),
+    class = factor(class, levels = c("notckd","ckd"))
+  )
+
+```
+
+```{r}
+colSums(is.na(ckd1))
+```
+
+-   I converted numeric-like columns to numeric and standardized categorical columns to consistent factor levels (yes/no, present/notpresent, normal/abnormal, class = notckd/ckd).
+
+-   And then I counted remaining NAs with `colSums(is.na(ckd1))`.
+
+```{r}
+# Helper function for categorical mode
+Mode <- function(x) {
+  x <- x[!is.na(x)]
+  if (length(x) == 0) return(NA)
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+```
+
+```{r}
+# Define numeric and categorical columns
+num_cols <- c("age","bp","sg","al","su","bgr","bu","sc",
+              "sod","pot","hemo","pcv","wbcc","rbcc")
+
+cat_cols <- c("rbc","pc","pcc","ba","htn","dm","cad",
+              "appet","pe","ane","class")
+```
+
+```{r}
+# Impute missing values
+ckd_clean <- ckd1 %>%
+  # Numeric → median imputation
+  mutate(across(all_of(num_cols),
+                ~ ifelse(is.na(.), median(., na.rm = TRUE), .))) %>%
+  # Categorical → mode imputation
+  mutate(across(all_of(cat_cols),
+                ~ ifelse(is.na(.), Mode(.), .))) %>%
+  # Make sure categorical vars are factors again
+  mutate(across(all_of(cat_cols), ~ factor(.)))
+```
+
+```{r}
+colSums(is.na(ckd_clean))
+```
+
+```{r}
+ckd_clean <- ckd_clean %>%
+  mutate(class = recode(class,
+                        "1" = "0",   # Not CKD
+                        "2" = "1"))  # CKD
+```
+
+```{r}
+ckd_clean$class <- factor(ckd_clean$class, levels = c("0", "1"))
+```
+
+```{r}
+levels(ckd_clean$class)
+table(ckd_clean$class)
+prop.table(table(ckd_clean$class))
+```
+
+After applying these imputations, I confirmed that the dataset is complete by running `colSums(is.na(ckd_clean))`, which showed **zero missing values** across all 26 variables.
+
+```{r}
+ckd_clean$class <- factor(ckd_clean$class,
+                          levels = c("0", "1"),
+                          labels = c("notckd", "ckd"))
+table(ckd_clean$class)
+```
+
+```{r}
+set.seed(1013)
+train_index <- createDataPartition(ckd_clean$class, p = 0.8, list = FALSE)
+train.df <- ckd_clean[train_index, ]
+test.df  <- ckd_clean[-train_index, ]
+
+table(train.df$class)
+table(test.df$class)
+```
+
+### **Class Distribution and Data Splitting**
+
+The original dataset contains a higher proportion of CKD patients (approximately 63%), indicating a mild class imbalance. Stratified sampling was used to create training and testing sets, and the class proportions in both sets remained consistent. This ensures that the model is trained and evaluated under representative class distributions and reduces sampling bias.
+
+```{r}
+library(randomForest)
+library(neuralnet)
+```
+
+```{r}
+# Fit base tree
+tree_base <- rpart(class ~ age + bp + sc + hemo,
+                   data = train.df, method = "class", cp = 0.001)
+```
+
+```{r}
+
+# Pick cp by 1-SE rule
+ct <- tree_base$cptable
+minrow <- which.min(ct[,"xerror"])
+# 1-SE threshold:
+xerr_thresh <- ct[minrow,"xerror"] + ct[minrow,"xstd"]
+# largest cp with xerror <= threshold
+cp_1se <- max(ct[ct[,"xerror"] <= xerr_thresh, "CP"])
+
+tree_pruned <- prune(tree_base, cp = cp_1se)
+rpart.plot(tree_pruned, digits = -2, extra = 101)
+```
+
+```{r}
+levels(test.df$class)
+```
+
+```{r}
+# Evaluate on test
+pred_tree <- predict(tree_pruned, newdata = test.df, type="class")
+cm_tree   <- confusionMatrix(pred_tree, test.df$class, positive="ckd")
+cm_tree
+```
+
+### **Decision Tree Model**
+
+The decision tree identified **hemoglobin (hemo)** as the primary splitting variable, followed by **serum creatinine (sc)** among patients with high hemoglobin levels. These splits are **clinically meaningful**:
+
+-   Lower hemoglobin levels are commonly associated with CKD-induced anemia.
+
+-   Higher serum creatinine levels are a direct indicator of impaired kidney filtration function.
+
+The pruned decision tree achieved strong performance on the test set:\
+
+**Accuracy = 0.8987, Sensitivity = 0.92, Specificity = 0.862, Kappa = 0.7821**\
+
+This indicates the model can correctly identify CKD patients while also maintaining reliable performance in distinguishing non-CKD individuals.
+
+```{r}
+# RF requires factor outcome
+train.df$class <- droplevels(train.df$class)
+test.df$class  <- droplevels(test.df$class)
+```
+
+```{r}
+# Tune mtry (number of variables tried at each split)
+x <- train.df %>% select(age, bp, sc, hemo)  # predictors only
+y <- train.df$class
+
+set.seed(1013)
+tune_out <- tuneRF(x = x, y = y, 
+                   mtryStart = 2, stepFactor = 2, 
+                   ntreeTry = 200, nodesize = 5, 
+                   improve = 0.01, trace = TRUE, plot = TRUE)
+```
+
+### **Random Forest Tuning**
+
+Using OOB (Out-of-Bag) validation, the optimal number of predictors tried at each split was found to be **mtry = 2**, which produced the lowest OOB error (\~3.74%). This suggests that considering two variables at each split balances model stability and variance reduction.
+
+```{r}
+# Best mtry is the row with the lowest OOB error:
+best_mtry <- tune_out[which.min(tune_out[,"OOBError"]), "mtry"]
+```
+
+```{r}
+set.seed(1013)
+rf_final <- randomForest(class ~ age + bp + sc + hemo,
+                         data = train.df,
+                         ntree = 500, mtry = best_mtry,
+                         nodesize = 5, importance = TRUE)
+
+rf_final         # OOB error
+varImpPlot(rf_final)
+importance(rf_final)
+```
+
+```{r}
+# (c) Evaluate on test set
+rf_pred <- predict(rf_final, newdata = test.df, type="class")
+cm_rf   <- confusionMatrix(rf_pred, test.df$class, positive="ckd")
+cm_rf
+```
+
+```{r}
+class(rf_final)
+```
+
+### **Final Random Forest Performance**
+
+The final Random Forest model achieved:
+
+-   **OOB error ≈ 4.36%** (internal cross-validation estimate)
+
+-   **Test Accuracy = 0.8987** (identical to the decision tree)
+
+The similarity between OOB performance and test performance indicates that the model generalizes well and is not overfitting.\
+
+However, the lack of improvement over the decision tree suggests that the dataset is highly separable, and the key signal can already be captured by a single tree.
+
+```{r}
+# 1. Check prediction output variety
+table(rf_pred)
+
+# 2. Check variable importance — should match your earlier plot
+importance(rf_final)
+
+# 3. Check diversity across trees
+rf_final$ntree   # should be 500
+rf_final$mtry    # should be 2
+rf_final$err.rate[1:10, ]  # should show gradual drop in error
+```
+
+### **Overall Interpretation**
+
+Both the decision tree and random forest models demonstrate strong performance in predicting chronic kidney disease. Across both models, hemoglobin and serum creatinine consistently emerge as the most influential predictors, which is highly consistent with clinical understanding of CKD progression.
+
+An important observation is that the decision tree and random forest produce nearly identical predictive performance on the test set. This occurs because the dataset is highly separable: the relationship between key laboratory values (particularly hemoglobin and serum creatinine) and CKD status is very strong and forms clear decision boundaries. As a result, a single decision tree is already able to capture the dominant classification rule with high accuracy. The random forest—although designed to reduce variance and improve generalization—does not substantially improve performance because there is little variance to reduce. In other words, the predictive signal in this dataset is strong enough that additional model complexity yields minimal benefit.
+
+The close alignment between OOB performance and test set performance further indicates that the random forest model is not overfitting and generalizes well. More importantly, the consistency across the two models underscores that the data itself is structured in a way that allows for clear and reliable classification, rather than requiring highly complex algorithms.
+
+```{r}
+# Prepare scaled frames with only needed columns
+train_nn <- train.df %>% select(class, age, bp, sc, hemo)
+test_nn  <- test.df  %>% select(class, age, bp, sc, hemo)
+```
+
+```{r}
+# Convert class to numeric 0/1 for neuralnet
+train_nn$class_num <- as.numeric(as.character(train_nn$class))
+test_nn$class_num  <- as.numeric(as.character(test_nn$class))
+```
+
+```{r}
+train_nn$class_num <- ifelse(train_nn$class == "ckd", 1, 0)
+test_nn$class_num  <- ifelse(test_nn$class == "ckd", 1, 0)
+```
+
+```{r}
+table(train_nn$class_num)
+table(test_nn$class_num)
+```
+
+```{r}
+# Clear old conflicting variables
+rm(scale, scale_cols, scale_fn, vmin, vmax)
+
+# Re-define scaling setup
+scale_vars <- c("age", "bp", "sc", "hemo")
+```
+
+```{r}
+vmin <- apply(train_nn[, scale_vars], 2, min)
+vmax <- apply(train_nn[, scale_vars], 2, max)
+
+scale_fn <- function(df){
+  out <- df
+  for(v in scale_vars){
+    out[[v]] <- (df[[v]] - vmin[[v]]) / (vmax[[v]] - vmin[[v]] + 1e-9)
+  }
+  out
+}
+
+train_s <- scale_fn(train_nn)
+test_s  <- scale_fn(test_nn)
+```
+
+```{r}
+summary(train_s[, scale_vars])
+```
+
+### **Data Preparation**
+
+The class variable was converted to a binary numeric format (1 = CKD, 0 = not CKD) to allow the neural network to learn probability-based outputs. The predictors (age, blood pressure, serum creatinine, hemoglobin) were scaled using **Min–Max normalization** to ensure all features were comparable in magnitude. This step is critical, as neural networks are sensitive to differences in variable scale and may otherwise converge slowly or unstably. The scaling procedure was correctly fit on the training set and applied to the test set, avoiding information leakage.
+
+```{r}
+set.seed(1013)
+
+# 0 hidden layer
+ann0 <- neuralnet(
+  class_num ~ age + bp + sc + hemo,
+  data = train_s,
+  hidden = 0,
+  linear.output = FALSE,
+  threshold = 0.01,
+  stepmax = 2e5,
+  lifesign = "minimal"
+)
+summary(ann0)
+plot(ann0)
+```
+
+```{r}
+# 1 hidden layer (4 neurons)
+ann1 <- neuralnet(
+  class_num ~ age + bp + sc + hemo,
+  data = train_s,
+  hidden = 4,
+  linear.output = FALSE,
+  threshold = 0.01,
+  stepmax = 2e5,
+  lifesign = "minimal"
+)
+
+summary(ann1)
+plot(ann1)
+```
+
+```{r}
+# Predict probabilities on test data
+p0 <- as.vector(predict(ann0, newdata = test_s))
+p1 <- as.vector(predict(ann1, newdata = test_s))
+```
+
+```{r}
+# Convert probabilities to class labels
+pred0 <- factor(ifelse(p0 >= 0.5, "ckd", "notckd"), levels = c("notckd","ckd"))
+pred1 <- factor(ifelse(p1 >= 0.5, "ckd", "notckd"), levels = c("notckd","ckd"))
+
+# Compare to actual classes
+cm_ann0 <- confusionMatrix(pred0, test.df$class, positive = "ckd")
+cm_ann1 <- confusionMatrix(pred1, test.df$class, positive = "ckd")
+
+cm_ann0
+cm_ann1
+```
+
+### ANN Model 1: No Hidden Layer
+
+Even without any hidden layers, the model performs very well, achieving the highest accuracy among all models tested. This indicates that the relationship between predictors, particularly serum creatinine and hemoglobin, and CKD status is highly linear. In other words, the key clinical indicators are strong enough that a simple linear model is sufficient to achieve excellent classification performance.
+
+### ANN Model 2: One Hidden Layer (4 Neurons)
+
+Introducing a hidden layer did not improve model performance. In fact, sensitivity decreased, meaning the model became slightly worse at identifying CKD cases. This reflects the fact that the dataset is already well-separated, and additional non-linear complexity was unnecessary and may have led to mild overfitting.
+
+```{r}
+grab <- function(cm) {
+  tibble(
+    Accuracy    = unname(cm$overall["Accuracy"]),
+    Sensitivity = unname(cm$byClass["Sensitivity"]),
+    Specificity = unname(cm$byClass["Specificity"]),
+    Kappa       = unname(cm$overall["Kappa"])
+  )
+}
+
+results <- bind_rows(
+  Tree_Baseline = grab(cm_tree),
+  RF_Tuned      = grab(cm_rf),
+  ANN_0_hidden  = grab(cm_ann0),
+  ANN_1_hidden  = grab(cm_ann1),
+  .id = "Model"
+)
+
+results
+```
+
+## 
