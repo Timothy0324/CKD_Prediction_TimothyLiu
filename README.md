@@ -25,8 +25,7 @@ Chronic Kidney Disease (CKD) Dataset — UCI Machine Learning Repository
 ---
 
 ## Project Overview  
-This repository contains a full end-to-end predictive analytics workflow applied to the **Chronic Kidney Disease (CKD) dataset**.  
-Across three assignments, I built and compared multiple predictive modeling approaches:
+This repository contains a full end-to-end predictive analytics workflow applied to the **Chronic Kidney Disease (CKD) dataset**. During this project, I built and compared multiple predictive modeling approaches:
 
 1. **Linear Regression** – to understand medical risk factors affecting hemoglobin levels  
 2. **Logistic Regression** – to predict CKD status  
